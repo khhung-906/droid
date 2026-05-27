@@ -1,6 +1,7 @@
 from copy import deepcopy
 
 import gym
+import time
 import numpy as np
 
 from droid.calibration.calibration_utils import load_calibration_info
@@ -13,7 +14,16 @@ from droid.misc.transformations import change_pose_frame
 
 
 class RobotEnv(gym.Env):
-    def __init__(self, action_space="cartesian_velocity", gripper_action_space=None, camera_kwargs={}, do_reset=True):
+    def __init__(
+        self,
+        action_space="cartesian_velocity",
+        gripper_action_space=None,
+        camera_kwargs={},
+        do_reset=False,
+        reset_joints=None,
+        randomize_low=None,
+        randomize_high=None,
+    ):
         # Initialize Gym Environment
         super().__init__()
 
@@ -24,11 +34,18 @@ class RobotEnv(gym.Env):
         self.check_action_range = "velocity" in action_space
 
         # Robot Configuration
-        self.reset_joints = np.array([0, -1 / 5 * np.pi, 0, -4 / 5 * np.pi, 0, 3 / 5 * np.pi, 0.0])
-        self.randomize_low = np.array([-0.1, -0.2, -0.1, -0.3, -0.3, -0.3])
-        self.randomize_high = np.array([0.1, 0.2, 0.1, 0.3, 0.3, 0.3])
-        self.DoF = 7 if ("cartesian" in action_space) else 8
-        self.control_hz = 15
+        self.reset_joints_high = np.array([0, -1 / 5 * np.pi, 0, -4 / 5 * np.pi, 0, 3 / 5 * np.pi, 0.0])
+
+        default_reset_joints = np.array([0.06480510532855988, 0.6547866463661194, -0.05229197070002556, -1.8198466300964355, -0.09882431477308273, 2.4260456562042236, 0.0662999376654625])
+        self.reset_joints = (
+            np.asarray(reset_joints, dtype=np.float64) if reset_joints is not None else default_reset_joints
+        )
+
+        self.randomize_low = np.array(randomize_low) if randomize_low is not None else np.zeros(6)
+        self.randomize_high = np.array(randomize_high) if randomize_high is not None else np.zeros(6)
+
+        self.DoF = 7 if ('cartesian' in action_space) else 8
+        self.control_hz = 10
 
         if nuc_ip is None:
             from franka.robot import FrankaRobot
@@ -42,15 +59,22 @@ class RobotEnv(gym.Env):
         self.calibration_dict = load_calibration_info()
         self.camera_type_dict = camera_type_dict
 
-        # Reset Robot
-        if do_reset:
-            self.reset()
+        # # Reset Robot
+        # if do_reset:
+        #     self.reset()
+
+    def move_up(self, steps=10, velocity=1.0):
+        for i in range(steps):
+            self.update_robot(
+                np.array([0.0, 0.0, velocity, 0.0, 0.0, 0.0, 0.0]),
+                action_space="cartesian_velocity",
+                gripper_action_space="velocity",
+                blocking=True,
+            )
 
     def step(self, action):
         # Check Action
         assert len(action) == self.DoF
-        if self.check_action_range:
-            assert (action.max() <= 1) and (action.min() >= -1)
 
         # Update Robot
         action_info = self.update_robot(
@@ -62,14 +86,16 @@ class RobotEnv(gym.Env):
         # Return Action Info
         return action_info
 
-    def reset(self, randomize=False):
-        self._robot.update_gripper(0, velocity=False, blocking=True)
+    def reset_high(self):
+        self._robot.update_joints(self.reset_joints_high, velocity=False, blocking=True)
 
+    def reset(self, randomize=False):
         if randomize:
             noise = np.random.uniform(low=self.randomize_low, high=self.randomize_high)
         else:
             noise = None
 
+        self._robot.update_gripper(0, velocity=False, blocking=True)
         self._robot.update_joints(self.reset_joints, velocity=False, blocking=True, cartesian_noise=noise)
 
     def update_robot(self, action, action_space="cartesian_velocity", gripper_action_space=None, blocking=False):

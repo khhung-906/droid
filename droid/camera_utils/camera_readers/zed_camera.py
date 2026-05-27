@@ -29,7 +29,11 @@ def gather_zed_cameras():
 resize_func_map = {"cv2": cv2.resize, None: None}
 
 standard_params = dict(
-    depth_minimum_distance=0.1, camera_resolution=sl.RESOLUTION.HD720, depth_stabilization=False, camera_fps=60, camera_image_flip=sl.FLIP_MODE.OFF
+    depth_minimum_distance=0.1,
+    camera_resolution=sl.RESOLUTION.HD1080,
+    depth_stabilization=False,
+    camera_fps=10,
+    camera_image_flip=sl.FLIP_MODE.OFF,
 )
 
 advanced_params = dict(
@@ -64,6 +68,7 @@ class ZedCamera:
         concatenate_images=False,
         resolution=(0, 0),
         resize_func=None,
+        left_only=False,
     ):
         # Non-Permenant Values #
         self.traj_image = image
@@ -74,6 +79,7 @@ class ZedCamera:
         self.depth = depth
         self.pointcloud = pointcloud
         self.resize_func = resize_func_map[resize_func]
+        self.left_only = bool(left_only)
 
     ### Camera Modes ###
     def set_calibration_mode(self):
@@ -132,6 +138,7 @@ class ZedCamera:
         sl_params = sl.InitParameters(**init_params)
         sl_params.set_from_serial_number(int(self.serial_number))
         sl_params.camera_image_flip = sl.FLIP_MODE.OFF
+        sl_params.enable_right_side_measure = True
         status = self._cam.open(sl_params)
         if status != sl.ERROR_CODE.SUCCESS:
             raise RuntimeError("Camera Failed To Open")
@@ -167,6 +174,8 @@ class ZedCamera:
     ### Basic Camera Utilities ###
     def _process_frame(self, frame):
         frame = deepcopy(frame.get_data())
+        if len(frame.shape) == 3 and frame.shape[2] == 4:
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGBA2RGB)
         if self.resizer_resolution == (0, 0):
             return frame
         return self.resize_func(frame, self.resizer_resolution)
@@ -195,6 +204,9 @@ class ZedCamera:
             if self.concatenate_images:
                 self._cam.retrieve_image(self._sbs_img, sl.VIEW.SIDE_BY_SIDE, resolution=self.zed_resolution)
                 data_dict["image"] = {self.serial_number: self._process_frame(self._sbs_img)}
+            elif getattr(self, "left_only", False):
+                self._cam.retrieve_image(self._left_img, sl.VIEW.LEFT, resolution=self.zed_resolution)
+                data_dict["image"] = {self.serial_number + "_left": self._process_frame(self._left_img)}
             else:
                 self._cam.retrieve_image(self._left_img, sl.VIEW.LEFT, resolution=self.zed_resolution)
                 self._cam.retrieve_image(self._right_img, sl.VIEW.RIGHT, resolution=self.zed_resolution)
@@ -202,12 +214,12 @@ class ZedCamera:
                     self.serial_number + "_left": self._process_frame(self._left_img),
                     self.serial_number + "_right": self._process_frame(self._right_img),
                 }
-        # if self.depth:
-        # 	self._cam.retrieve_measure(self._left_depth, sl.MEASURE.DEPTH, resolution=self.resolution)
-        # 	self._cam.retrieve_measure(self._right_depth, sl.MEASURE.DEPTH_RIGHT, resolution=self.resolution)
-        # 	data_dict['depth'] = {
-        # 		self.serial_number + '_left': self._left_depth.get_data().copy(),
-        # 		self.serial_number + '_right': self._right_depth.get_data().copy()}
+        if self.depth:
+        	self._cam.retrieve_measure(self._left_depth, sl.MEASURE.DEPTH, resolution=self.zed_resolution)
+        	self._cam.retrieve_measure(self._right_depth, sl.MEASURE.DEPTH_RIGHT, resolution=self.zed_resolution)
+        	data_dict['depth'] = {
+        		self.serial_number + '_left': self._left_depth.get_data().copy(),
+        		self.serial_number + '_right': self._right_depth.get_data().copy()}
         # if self.pointcloud:
         # 	self._cam.retrieve_measure(self._left_pointcloud, sl.MEASURE.XYZRGBA, resolution=self.resolution)
         # 	self._cam.retrieve_measure(self._right_pointcloud, sl.MEASURE.XYZRGBA_RIGHT, resolution=self.resolution)

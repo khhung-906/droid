@@ -1,6 +1,7 @@
 import os
 import random
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from droid.camera_utils.camera_readers.zed_camera import gather_zed_cameras
 from droid.camera_utils.info import get_camera_type
@@ -76,18 +77,28 @@ class MultiCameraWrapper:
         full_obs_dict = defaultdict(dict)
         full_timestamp_dict = {}
 
-        # Read Cameras In Randomized Order #
-        all_cam_ids = list(self.camera_dict.keys())
-        random.shuffle(all_cam_ids)
+        running_cam_ids = [
+            cam_id for cam_id in self.camera_dict
+            if self.camera_dict[cam_id].is_running()
+        ]
 
-        for cam_id in all_cam_ids:
-            if not self.camera_dict[cam_id].is_running():
-                continue
-            data_dict, timestamp_dict = self.camera_dict[cam_id].read_camera()
+        if len(running_cam_ids) <= 1:
+            for cam_id in running_cam_ids:
+                data_dict, timestamp_dict = self.camera_dict[cam_id].read_camera()
+                for key in data_dict:
+                    full_obs_dict[key].update(data_dict[key])
+                full_timestamp_dict.update(timestamp_dict)
+        else:
+            def _read(cam_id):
+                return cam_id, self.camera_dict[cam_id].read_camera()
 
-            for key in data_dict:
-                full_obs_dict[key].update(data_dict[key])
-            full_timestamp_dict.update(timestamp_dict)
+            with ThreadPoolExecutor(max_workers=len(running_cam_ids)) as executor:
+                futures = {executor.submit(_read, cam_id): cam_id for cam_id in running_cam_ids}
+                for future in as_completed(futures):
+                    cam_id, (data_dict, timestamp_dict) = future.result()
+                    for key in data_dict:
+                        full_obs_dict[key].update(data_dict[key])
+                    full_timestamp_dict.update(timestamp_dict)
 
         return full_obs_dict, full_timestamp_dict
 

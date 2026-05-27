@@ -148,7 +148,7 @@ class FrankaRobot:
         return self._robot.get_joint_velocities().tolist()
 
     def get_gripper_position(self):
-        return 1 - (self._gripper.get_state().width / self._max_gripper_width)
+        return self._gripper.get_state().width / self._max_gripper_width
 
     def get_ee_pose(self):
         pos, quat = self._robot.get_ee_pose()
@@ -203,7 +203,7 @@ class FrankaRobot:
         if gripper_action_space == "velocity":
             action_dict["gripper_velocity"] = action[-1]
             gripper_delta = self._ik_solver.gripper_velocity_to_delta(action[-1])
-            gripper_position = robot_state["gripper_position"] + gripper_delta
+            gripper_position = (1 - robot_state["gripper_position"]) + gripper_delta
             action_dict["gripper_position"] = float(np.clip(gripper_position, 0, 1))
         else:
             action_dict["gripper_position"] = float(np.clip(action[-1], 0, 1))
