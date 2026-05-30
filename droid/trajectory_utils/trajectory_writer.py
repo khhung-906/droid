@@ -21,27 +21,40 @@ def write_dict_to_hdf5(hdf5_file, data_dict, keys_to_ignore=["image", "depth", "
         curr_data = data_dict[key]
         if type(curr_data) == list:
             curr_data = np.array(curr_data)
-        dtype = type(curr_data)
 
         # Unwrap If Dictionary #
-        if dtype == dict:
+        if type(curr_data) == dict:
             if key not in hdf5_file:
                 hdf5_file.create_group(key)
             write_dict_to_hdf5(hdf5_file[key], curr_data)
             continue
 
+        # Handle strings/Unicode - convert to object dtype
+        if isinstance(curr_data, str) or (isinstance(curr_data, np.ndarray) and curr_data.dtype.kind == 'U'):
+            if isinstance(curr_data, str):
+                curr_data = np.array(curr_data, dtype=object)
+            else:
+                curr_data = np.array([str(x) for x in curr_data.flat], dtype=object).reshape(curr_data.shape)
+
         # Make Room For Data #
         if key not in hdf5_file:
-            if dtype != np.ndarray:
+            if not isinstance(curr_data, np.ndarray):
                 dshape = ()
+                h5_dtype = type(curr_data)
             else:
-                dtype, dshape = curr_data.dtype, curr_data.shape
-            hdf5_file.create_dataset(key, (1, *dshape), maxshape=(None, *dshape), dtype=dtype)
+                np_dtype, dshape = curr_data.dtype, curr_data.shape
+                # Handle Unicode strings - convert if somehow missed earlier
+                if np_dtype.kind == 'U':
+                    curr_data = np.array([str(x) for x in curr_data.flat], dtype=object).reshape(curr_data.shape)
+                    np_dtype = object
+                # Use variable-length string dtype for object arrays (strings)
+                h5_dtype = h5py.special_dtype(vlen=str) if np_dtype == object else np_dtype
+            hdf5_file.create_dataset(key, (1, *dshape), maxshape=(None, *dshape), dtype=h5_dtype)
         else:
             hdf5_file[key].resize(hdf5_file[key].shape[0] + 1, axis=0)
 
         # Save Data #
-        hdf5_file[key][-1] = curr_data
+        hdf5_file[key][-1] = curr_data.item() if isinstance(curr_data, np.ndarray) and curr_data.dtype == object and len(curr_data.shape) == 0 else curr_data
 
 
 class TrajectoryWriter:
