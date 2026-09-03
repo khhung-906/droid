@@ -16,6 +16,13 @@ from droid.robot_ik.robot_ik_solver import RobotIKSolver
 
 
 class FrankaRobot:
+    def __init__(self, robot_port=None, gripper_port=None):
+        # Ports default to None -> polymetis defaults (single-arm behavior).
+        # For two arms on one NUC, each server's FrankaRobot connects to its own
+        # RobotInterface/GripperInterface port.
+        self._robot_port = robot_port
+        self._gripper_port = gripper_port
+
     def launch_controller(self):
         try:
             self.kill_controller()
@@ -33,8 +40,14 @@ class FrankaRobot:
         time.sleep(5)
 
     def launch_robot(self):
-        self._robot = RobotInterface(ip_address="localhost")
-        self._gripper = GripperInterface(ip_address="localhost")
+        if self._robot_port is not None:
+            self._robot = RobotInterface(ip_address="localhost", port=self._robot_port)
+        else:
+            self._robot = RobotInterface(ip_address="localhost")
+        if self._gripper_port is not None:
+            self._gripper = GripperInterface(ip_address="localhost", port=self._gripper_port)
+        else:
+            self._gripper = GripperInterface(ip_address="localhost")
         self._max_gripper_width = self._gripper.metadata.max_width
         self._ik_solver = RobotIKSolver()
         self._controller_not_loaded = False

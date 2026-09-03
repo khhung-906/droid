@@ -23,6 +23,7 @@ class RobotEnv(gym.Env):
         reset_joints=None,
         randomize_low=None,
         randomize_high=None,
+        port=4242,
     ):
         # Initialize Gym Environment
         super().__init__()
@@ -45,14 +46,14 @@ class RobotEnv(gym.Env):
         self.randomize_high = np.array(randomize_high) if randomize_high is not None else np.zeros(6)
 
         self.DoF = 7 if ('cartesian' in action_space) else 8
-        self.control_hz = 10
+        self.control_hz = 30
 
         if nuc_ip is None:
             from franka.robot import FrankaRobot
 
             self._robot = FrankaRobot()
         else:
-            self._robot = ServerInterface(ip_address=nuc_ip)
+            self._robot = ServerInterface(ip_address=nuc_ip, port=port)
 
         # Create Cameras
         self.camera_reader = MultiCameraWrapper(camera_kwargs)

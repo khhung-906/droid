@@ -30,9 +30,12 @@ resize_func_map = {"cv2": cv2.resize, None: None}
 
 standard_params = dict(
     depth_minimum_distance=0.1,
-    camera_resolution=sl.RESOLUTION.HD1080,
+    camera_resolution=sl.RESOLUTION.HD720,
     depth_stabilization=False,
-    camera_fps=10,
+    # 30 fps (was 60) so 3 ZEDs fit one USB3 controller. ZED only supports 15/30/60
+    # at HD720, and 3x60 is what just failed -> 30 is the max for 3 HD720 cams.
+    # For 60 fps with 3 cams, switch camera_resolution to sl.RESOLUTION.VGA.
+    camera_fps=30,
     camera_image_flip=sl.FLIP_MODE.OFF,
 )
 
@@ -69,6 +72,7 @@ class ZedCamera:
         resolution=(0, 0),
         resize_func=None,
         left_only=False,
+        views=None,
     ):
         # Non-Permenant Values #
         self.traj_image = image
@@ -80,6 +84,8 @@ class ZedCamera:
         self.pointcloud = pointcloud
         self.resize_func = resize_func_map[resize_func]
         self.left_only = bool(left_only)
+        # Stereo view(s) to retrieve, e.g. ("right",). Takes precedence over left_only.
+        self.views = tuple(views) if views else None
 
     ### Camera Modes ###
     def set_calibration_mode(self):
@@ -204,16 +210,18 @@ class ZedCamera:
             if self.concatenate_images:
                 self._cam.retrieve_image(self._sbs_img, sl.VIEW.SIDE_BY_SIDE, resolution=self.zed_resolution)
                 data_dict["image"] = {self.serial_number: self._process_frame(self._sbs_img)}
-            elif getattr(self, "left_only", False):
-                self._cam.retrieve_image(self._left_img, sl.VIEW.LEFT, resolution=self.zed_resolution)
-                data_dict["image"] = {self.serial_number + "_left": self._process_frame(self._left_img)}
             else:
-                self._cam.retrieve_image(self._left_img, sl.VIEW.LEFT, resolution=self.zed_resolution)
-                self._cam.retrieve_image(self._right_img, sl.VIEW.RIGHT, resolution=self.zed_resolution)
-                data_dict["image"] = {
-                    self.serial_number + "_left": self._process_frame(self._left_img),
-                    self.serial_number + "_right": self._process_frame(self._right_img),
-                }
+                views = getattr(self, "views", None)
+                if views is None:
+                    views = ("left",) if getattr(self, "left_only", False) else ("left", "right")
+                images = {}
+                if "left" in views:
+                    self._cam.retrieve_image(self._left_img, sl.VIEW.LEFT, resolution=self.zed_resolution)
+                    images[self.serial_number + "_left"] = self._process_frame(self._left_img)
+                if "right" in views:
+                    self._cam.retrieve_image(self._right_img, sl.VIEW.RIGHT, resolution=self.zed_resolution)
+                    images[self.serial_number + "_right"] = self._process_frame(self._right_img)
+                data_dict["image"] = images
         if self.depth:
         	self._cam.retrieve_measure(self._left_depth, sl.MEASURE.DEPTH, resolution=self.zed_resolution)
         	self._cam.retrieve_measure(self._right_depth, sl.MEASURE.DEPTH_RIGHT, resolution=self.zed_resolution)
