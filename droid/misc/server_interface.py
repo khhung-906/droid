@@ -21,22 +21,17 @@ def attempt_n_times(function_list, max_attempts, sleep_time=0.1):
 
 
 class ServerInterface:
-    def __init__(self, ip_address="127.0.0.1", port=4242, launch=True, start_controller=True):
+    def __init__(self, ip_address="127.0.0.1", launch=True):
         self.ip_address = ip_address
-        self.port = port
         self.establish_connection()
 
         if launch:
-            # start_controller=False: connect to an already-running controller
-            # (launch_robot only). launch_controller re-runs launch scripts that
-            # `pkill -9 run_server/franka_panda_cl` by name, which would cross-kill
-            # the other arm's server when two servers share one NUC.
-            func_list = [self.launch_controller, self.launch_robot] if start_controller else [self.launch_robot]
+            func_list = [self.launch_controller, self.launch_robot]
             attempt_n_times(func_list, max_attempts=2)
 
     def establish_connection(self):
         self.server = zerorpc.Client(heartbeat=20)
-        self.server.connect(f"tcp://{self.ip_address}:{self.port}")
+        self.server.connect("tcp://" + self.ip_address + ":4242")
 
     def launch_controller(self):
         self.server.launch_controller()

@@ -23,7 +23,6 @@ class RobotEnv(gym.Env):
         reset_joints=None,
         randomize_low=None,
         randomize_high=None,
-        port=4242,
     ):
         # Initialize Gym Environment
         super().__init__()
@@ -53,7 +52,7 @@ class RobotEnv(gym.Env):
 
             self._robot = FrankaRobot()
         else:
-            self._robot = ServerInterface(ip_address=nuc_ip, port=port)
+            self._robot = ServerInterface(ip_address=nuc_ip)
 
         # Create Cameras
         self.camera_reader = MultiCameraWrapper(camera_kwargs)
